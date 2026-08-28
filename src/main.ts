@@ -160,7 +160,7 @@ export default class HoverEditorPlugin extends Plugin {
             return this.parentSplit.getContainer();
           };
         },
-      })
+      }),
     );
   }
 
@@ -175,11 +175,14 @@ export default class HoverEditorPlugin extends Plugin {
             // Obsidian 1.6 deletes existing instructions on setInstructions(),
             // so patch the element to not empty(); setTimeout will remove the
             // patch once the current event is over
-            setTimeout(around(this.instructionsEl, {
-              empty(next) {
-                return () => {};
-              }
-            }), 0);
+            setTimeout(
+              around(this.instructionsEl, {
+                empty(next) {
+                  return () => {};
+                },
+              }),
+              0,
+            );
           }
           this.setInstructions([
             {
@@ -218,11 +221,12 @@ export default class HoverEditorPlugin extends Plugin {
                 .setIcon("popup-open")
                 .setTitle("Open in Hover Editor")
                 .onClick(async () => {
-                  const newLeaf = plugin.spawnPopover(), {autoFocus} = plugin.settings;
-                  await newLeaf.setViewState({...this.leaf.getViewState(), active: autoFocus}, {focus: autoFocus});
+                  const newLeaf = plugin.spawnPopover(),
+                    { autoFocus } = plugin.settings;
+                  await newLeaf.setViewState({ ...this.leaf.getViewState(), active: autoFocus }, { focus: autoFocus });
                   if (autoFocus) {
-                    await sleep(200)
-                    this.app.workspace.setActiveLeaf(newLeaf, {focus: true});
+                    await sleep(200);
+                    this.app.workspace.setActiveLeaf(newLeaf, { focus: true });
                   }
                 })
                 .setSection?.("open");
@@ -254,35 +258,116 @@ export default class HoverEditorPlugin extends Plugin {
     this.register(uninstaller);
 
     // Restore pre-1.6 view header icons so you can drag hover editor leaves back to the workspace
-    this.register(around(ItemView.prototype, {
-      load(old) {
-        return function(this: View) {
-          if (!this.iconEl) {
-            const iconEl = this.iconEl = this.headerEl.createDiv("clickable-icon view-header-icon")
-            this.headerEl.prepend(iconEl)
-            iconEl.draggable = true
-            iconEl.addEventListener("dragstart", e => { this.app.workspace.onDragLeaf(e, this.leaf) })
-            setIcon(iconEl, this.getIcon())
-            setTooltip(iconEl, "Drag to rearrange")
-          }
-          return old.call(this)
-        }
-      }
-    }))
+    this.register(
+      around(ItemView.prototype, {
+        load(old) {
+          return function (this: View) {
+            if (!this.iconEl) {
+              const iconEl = (this.iconEl = this.headerEl.createDiv("clickable-icon view-header-icon"));
+              this.headerEl.prepend(iconEl);
+              iconEl.draggable = true;
+              iconEl.addEventListener("dragstart", e => {
+                this.app.workspace.onDragLeaf(e, this.leaf);
+              });
+              setIcon(iconEl, this.getIcon());
+              setTooltip(iconEl, "Drag to rearrange");
+            }
+            return old.call(this);
+          };
+        },
+      }),
+    );
   }
 
   patchMarkdownPreviewView() {
     // Prevent erratic scrolling of preview views when workspace layout changes
-    this.register(around(MarkdownPreviewView.prototype, {
-      onResize(old) {
-        return function onResize() {
-          this.renderer.onResize();
-          if (this.view.scroll !== null && this.view.scroll !== this.getScroll()) {
-            this.renderer.applyScrollDelayed(this.view.scroll)
-          }
-        }
-      }
-    }))
+    this.register(
+      around(MarkdownPreviewView.prototype, {
+        onResize(old) {
+          return function onResize() {
+            this.renderer.onResize();
+            if (this.view.scroll !== null && this.view.scroll !== this.getScroll()) {
+              this.renderer.applyScrollDelayed(this.view.scroll);
+            }
+          };
+        },
+      }),
+    );
+
+    // Handle block references (#^blockid) in hover editor
+    // Obsidian's resolveSubpath doesn't support block references,
+    // so we manually scroll to the block element after the file loads
+    this.register(
+      around(WorkspaceLeaf.prototype, {
+        openFile(old) {
+          return function (file: TFile, options?: unknown) {
+            const result = old.call(this, file, options);
+            const he = HoverEditor.forLeaf(this);
+            if (!he) return result;
+
+            // Extract blockId from subpath (format: #^blockid)
+            const subpath = (options as any)?.eState?.subpath as string | undefined;
+            const match = subpath && /^#\^(.+)$/.exec(subpath);
+            const blockId = match?.[1];
+            if (!blockId) return result;
+
+            // Wait for the content to render and scroll to the block
+            const observer = new MutationObserver(() => {
+              const container = this.view?.contentEl?.querySelector(
+                ".markdown-preview-view, .markdown-rendered, .lineage-view",
+              ) as HTMLElement;
+              if (!container) return;
+              const blockEl = container.querySelector(`[data-block-id="^${blockId}"]`) as HTMLElement;
+              if (blockEl) {
+                // For lineage views, scroll the card wrapper instead of the raw block element
+                const card = container.classList.contains("lineage-view") ? blockEl.closest(".lineage-card") : null;
+                (card || blockEl).scrollIntoView({ behavior: "smooth", block: "center" });
+
+                // Select the card via lineage viewStore so it gets active-node styling
+                if (card && card.id && (this.view as any)?.viewStore) {
+                    setTimeout(() => {
+                        (this.view as any).viewStore.dispatch({
+                            type: 'view/set-active-node/mouse-silent',
+                            payload: { id: card.id },
+                        });
+                    }, 16);
+                }
+
+                observer.disconnect();
+              }
+            });
+            observer.observe(this.view?.contentEl || document.body, {
+              childList: true,
+              subtree: true,
+            });
+            // Fallback: try scrolling after a timeout in case DOM doesn't trigger mutation
+            setTimeout(() => {
+              const container = this.view?.contentEl?.querySelector(
+                ".markdown-preview-view, .markdown-rendered, .lineage-view",
+              ) as HTMLElement;
+              if (!container) return;
+              const blockEl = container.querySelector(`[data-block-id="^${blockId}"]`) as HTMLElement;
+              if (blockEl) {
+                const card = container.classList.contains("lineage-view") ? blockEl.closest(".lineage-card") : null;
+                (card || blockEl).scrollIntoView({ behavior: "smooth", block: "center" });
+
+                // Select the card via lineage viewStore so it gets active-node styling
+                if (card && card.id && (this.view as any)?.viewStore) {
+                    setTimeout(() => {
+                        (this.view as any).viewStore.dispatch({
+                            type: 'view/set-active-node/mouse-silent',
+                            payload: { id: card.id },
+                        });
+                    }, 16);
+                }
+              }
+              observer.disconnect();
+            }, 1500);
+            return result;
+          };
+        },
+      }),
+    );
   }
 
   patchMarkdownPreviewRenderer() {
@@ -291,7 +376,7 @@ export default class HoverEditorPlugin extends Plugin {
       registerDomEvents(old: Function) {
         return function (
           el: HTMLElement,
-          instance: { getFile?(): TFile; hoverParent?: HoverParent, info?: HoverParent & { getFile(): TFile} },
+          instance: { getFile?(): TFile; hoverParent?: HoverParent; info?: HoverParent & { getFile(): TFile } },
           ...args: unknown[]
         ) {
           el?.on("mouseover", ".internal-embed.is-loaded", (event: MouseEvent, targetEl: HTMLElement) => {
@@ -341,15 +426,15 @@ export default class HoverEditorPlugin extends Plugin {
           if (old.call(this, arg1, arg2)) return true;
 
           // Handle old/new API parameter swap
-          let cb:     leafIterator  = (typeof arg1 === "function" ? arg1 : arg2) as leafIterator;
-          let parent: WorkspaceItem = (typeof arg1 === "function" ? arg2 : arg1) as WorkspaceItem;
+          const cb: leafIterator = (typeof arg1 === "function" ? arg1 : arg2) as leafIterator;
+          const parent: WorkspaceItem = (typeof arg1 === "function" ? arg2 : arg1) as WorkspaceItem;
 
-          if (!parent) return false;  // <- during app startup, rootSplit can be null
-          if (layoutChanging) return false;  // Don't let HEs close during workspace change
+          if (!parent) return false; // <- during app startup, rootSplit can be null
+          if (layoutChanging) return false; // Don't let HEs close during workspace change
 
           // 0.14.x doesn't have WorkspaceContainer; this can just be an instanceof check once 15.x is mandatory:
           if (parent === app.workspace.rootSplit || (WorkspaceContainer && parent instanceof WorkspaceContainer)) {
-            for(const popover of HoverEditor.popoversForWindow((parent as WorkspaceContainer).win)) {
+            for (const popover of HoverEditor.popoversForWindow((parent as WorkspaceContainer).win)) {
               // Use old API here for compat w/0.14.x
               if (old.call(this, cb, popover.rootSplit)) return true;
             }
@@ -435,7 +520,7 @@ export default class HoverEditorPlugin extends Plugin {
           state: EphemeralState,
           ...args: unknown[]
         ) {
-          const {subpath} = parseLinktext(linkText);
+          const { subpath } = parseLinktext(linkText);
           if (subpath && subpath[0] === "#") {
             if (subpath.startsWith("#[^")) {
               if (plugin.settings.footnotes !== "always") {
@@ -704,7 +789,7 @@ export default class HoverEditorPlugin extends Plugin {
       const { parentSplit: oldParentSplit } = oldLeaf;
       oldParentSplit.removeChild(oldLeaf);
       newParentSplit.replaceChild(0, oldLeaf, true);
-      this.app.workspace.setActiveLeaf(oldLeaf, {focus: true});
+      this.app.workspace.setActiveLeaf(oldLeaf, { focus: true });
     });
     return newLeaf;
   }
@@ -712,14 +797,14 @@ export default class HoverEditorPlugin extends Plugin {
   dockPopoverToWorkspace(oldLeaf: WorkspaceLeaf) {
     if (!oldLeaf) return;
     oldLeaf.parentSplit.removeChild(oldLeaf);
-    const {rootSplit} = this.app.workspace;
+    const { rootSplit } = this.app.workspace;
     // Add to first pane/tab group
     this.app.workspace.iterateLeaves(rootSplit, leaf => {
-      leaf.parentSplit.insertChild(-1, oldLeaf)
-      return true
-    })
-    this.app.workspace.activeLeaf = null;  // Force re-activation
-    this.app.workspace.setActiveLeaf(oldLeaf, {focus: true});
+      leaf.parentSplit.insertChild(-1, oldLeaf);
+      return true;
+    });
+    this.app.workspace.activeLeaf = null; // Force re-activation
+    this.app.workspace.setActiveLeaf(oldLeaf, { focus: true });
     return oldLeaf;
   }
 

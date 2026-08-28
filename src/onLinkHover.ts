@@ -20,7 +20,13 @@ export function onLinkHover(
   if (targetEl && targetEl.matches('.workspace-leaf-content[data-type="calendar"] table.calendar td > div'))
     targetEl = targetEl.parentElement!;
 
-  if (oldState && "scroll" in oldState && !("line" in oldState) && targetEl && targetEl.matches(".search-result-file-match")) {
+  if (
+    oldState &&
+    "scroll" in oldState &&
+    !("line" in oldState) &&
+    targetEl &&
+    targetEl.matches(".search-result-file-match")
+  ) {
     oldState.line = oldState.scroll;
     delete oldState.scroll;
   }

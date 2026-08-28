@@ -97,9 +97,7 @@ export class SettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Trigger hover preview on sub-heading links")
-      .setDesc(
-        "Use hover editor for links to subheadings, instead of the built-in preview/editor",
-      )
+      .setDesc("Use hover editor for links to subheadings, instead of the built-in preview/editor")
       .addToggle(toggle =>
         toggle.setValue(this.plugin.settings.headings === "always").onChange(value => {
           this.plugin.settings.headings = value ? "always" : "never";
@@ -109,9 +107,7 @@ export class SettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Trigger hover preview on block links")
-      .setDesc(
-        "Use hover editor for links to blocks, instead of the built-in preview/editor",
-      )
+      .setDesc("Use hover editor for links to blocks, instead of the built-in preview/editor")
       .addToggle(toggle =>
         toggle.setValue(this.plugin.settings.blocks === "always").onChange(value => {
           this.plugin.settings.blocks = value ? "always" : "never";
@@ -121,9 +117,7 @@ export class SettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Trigger hover preview on footnotes")
-      .setDesc(
-        "Use hover editor for footnotes, instead of the built-in preview/editor",
-      )
+      .setDesc("Use hover editor for footnotes, instead of the built-in preview/editor")
       .addToggle(toggle =>
         toggle.setValue(this.plugin.settings.footnotes === "always").onChange(value => {
           this.plugin.settings.footnotes = value ? "always" : "never";

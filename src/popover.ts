@@ -44,19 +44,19 @@ export interface HoverEditorParent {
   view?: View;
   dom?: HTMLElement;
 }
-type ConstructableWorkspaceSplit = new (ws: Workspace, dir: "horizontal"|"vertical") => WorkspaceSplit;
+type ConstructableWorkspaceSplit = new (ws: Workspace, dir: "horizontal" | "vertical") => WorkspaceSplit;
 
 let mouseCoords: MousePos = { x: 0, y: 0 };
 
 function nosuper<T>(base: new (...args: unknown[]) => T): new () => T {
   const derived = function () {
-    return Object.setPrototypeOf(new Component, new.target.prototype);
+    return Object.setPrototypeOf(new Component(), new.target.prototype);
   };
   derived.prototype = base.prototype;
   return Object.setPrototypeOf(derived, base);
 }
 
-const layers = new WeakMap<Window,Set<HoverEditor>>();
+const layers = new WeakMap<Window, Set<HoverEditor>>();
 
 export class HoverEditor extends nosuper(HoverPopover) {
   onTarget: boolean;
@@ -151,8 +151,8 @@ export class HoverEditor extends nosuper(HoverPopover) {
 
   static popoversForWindow(win?: Window) {
     return (Array.prototype.slice.call(win?.document?.body.querySelectorAll(".hover-popover") ?? []) as HTMLElement[])
-    .map(el => popovers.get(el)!)
-    .filter(he => he);
+      .map(el => popovers.get(el)!)
+      .filter(he => he);
   }
 
   static forLeaf(leaf: WorkspaceLeaf | undefined) {
@@ -257,18 +257,20 @@ export class HoverEditor extends nosuper(HoverPopover) {
   }
 
   activate = debounce(() => {
-    const {win} = this.document;
+    const { win } = this.document;
     let layer = layers.get(win);
-    layer || layers.set(win, layer = new Set());
+    layer || layers.set(win, (layer = new Set()));
     layer.delete(this);
     layer.add(this);
     win.requestAnimationFrame(() => {
       let zIndex = 41;
-      Array.from(layer!).reverse().forEach(he => {
-        he.hoverEl.style.setProperty("--he-popover-layer-inactive", ""+zIndex);
-        if (zIndex > 31) zIndex--;
-      })
-    })
+      Array.from(layer!)
+        .reverse()
+        .forEach(he => {
+          he.hoverEl.style.setProperty("--he-popover-layer-inactive", "" + zIndex);
+          if (zIndex > 31) zIndex--;
+        });
+    });
   }, 100);
 
   onZoomOut() {
@@ -372,12 +374,16 @@ export class HoverEditor extends nosuper(HoverPopover) {
     this.rootSplit.getContainer = () => HoverEditor.containerForDocument(this.document);
     this.titleEl.insertAdjacentElement("afterend", this.rootSplit.containerEl);
     // Obsidian 1.8.7 changed createLeafInParent to make new leaves active, so we have to stop it  :-(
-    const remove = around(this.plugin.app.workspace, {setActiveLeaf() { return () => {}; }})
-    let leaf: WorkspaceLeaf
+    const remove = around(this.plugin.app.workspace, {
+      setActiveLeaf() {
+        return () => {};
+      },
+    });
+    let leaf: WorkspaceLeaf;
     try {
       leaf = this.plugin.app.workspace.createLeafInParent(this.rootSplit, 0);
     } finally {
-      remove()
+      remove();
     }
     this.updateLeaves();
     return leaf;
@@ -386,14 +392,16 @@ export class HoverEditor extends nosuper(HoverPopover) {
   onload(): void {
     super.onload();
     this.registerEvent(this.plugin.app.workspace.on("layout-change", this.updateLeaves, this));
-    this.registerEvent(app.workspace.on("layout-change", () => {
-      // Ensure that top-level items in a popover are not tabbed
-      this.rootSplit.children.forEach((item, index) => {
-        if (item instanceof WorkspaceTabs) {
-          this.rootSplit.replaceChild(index, item.children[0]);
-        }
-      })
-    }));
+    this.registerEvent(
+      app.workspace.on("layout-change", () => {
+        // Ensure that top-level items in a popover are not tabbed
+        this.rootSplit.children.forEach((item, index) => {
+          if (item instanceof WorkspaceTabs) {
+            this.rootSplit.replaceChild(index, item.children[0]);
+          }
+        });
+      }),
+    );
   }
 
   leaves() {
@@ -410,7 +418,7 @@ export class HoverEditor extends nosuper(HoverPopover) {
   }
 
   adjustHeight(byPx: number) {
-    this.hoverEl.style.height = (this.hoverEl.offsetHeight) + byPx + "px";
+    this.hoverEl.style.height = this.hoverEl.offsetHeight + byPx + "px";
   }
 
   toggleViewHeader(value?: boolean, initial?: boolean) {
@@ -502,7 +510,9 @@ export class HoverEditor extends nosuper(HoverPopover) {
 
     // Workaround until 0.15.7
     if (requireApiVersion("0.15.1") && !requireApiVersion("0.15.7"))
-      app.workspace.iterateLeaves(leaf => { if (leaf.view instanceof MarkdownView) (leaf.view.editMode as any).reinit?.(); }, this.rootSplit);
+      app.workspace.iterateLeaves(leaf => {
+        if (leaf.view instanceof MarkdownView) (leaf.view.editMode as any).reinit?.();
+      }, this.rootSplit);
 
     this.togglePin(this.isPinned);
 
@@ -684,7 +694,9 @@ export class HoverEditor extends nosuper(HoverPopover) {
         this.onTarget ||
         this.onHover ||
         (this.state == PopoverState.Shown && this.isPinned) ||
-        this.document.querySelector(`body>.modal-container, body > #he${this.id} ~ .menu, body > #he${this.id} ~ .suggestion-container`)
+        this.document.querySelector(
+          `body>.modal-container, body > #he${this.id} ~ .menu, body > #he${this.id} ~ .suggestion-container`,
+        )
       )
     );
   }
@@ -1044,6 +1056,13 @@ export class HoverEditor extends nosuper(HoverPopover) {
       this.displayOpenFileAction(file);
       return;
     }
+    // Lineage integration: when the link points at a block/heading inside a
+    // Lineage document, let the Lineage plugin render just that card in card
+    // view instead of the whole document
+    if (file.extension === "md" && link?.subpath) {
+      const lineageOpened = await this.tryOpenLineageCard(file, link.subpath, createInLeaf);
+      if (lineageOpened) return;
+    }
     eState = Object.assign(this.buildEphemeralState(file, link), eState);
     const parentMode = this.getDefaultMode();
     const state = this.buildState(parentMode, eState);
@@ -1067,11 +1086,77 @@ export class HoverEditor extends nosuper(HoverPopover) {
       this.hoverEl.style.height = "800px";
       this.hoverEl.style.width = "600px";
     }
-    if (state.state?.mode === "source") this.whenShown(() => {
-      // Not sure why this is needed, but without it we get issue #186
-      if (requireApiVersion("1.0"))(leaf?.view as any)?.editMode?.reinit?.();
-      leaf?.view?.setEphemeralState(state.eState);
+    if (state.state?.mode === "source")
+      this.whenShown(() => {
+        // Not sure why this is needed, but without it we get issue #186
+        if (requireApiVersion("1.0")) (leaf?.view as any)?.editMode?.reinit?.();
+        leaf?.view?.setEphemeralState(state.eState);
+      });
+  }
+
+  /**
+   * Try to open the link target as a single Lineage card via the Lineage
+   * plugin's public API (`openCardPopover`). Only the card referenced by the
+   * link's subpath is rendered, using Lineage's own card view.
+   *
+   * Returns true when handled; false when Lineage is not installed, the file
+   * is not a Lineage document, or the subpath could not be resolved to a
+   * card — in which case the caller falls back to the regular markdown view.
+   */
+  private async tryOpenLineageCard(file: TFile, subpath: string, useLeaf?: WorkspaceLeaf): Promise<boolean> {
+    const lineage = (this.plugin.app.plugins?.plugins as Record<string, any> | undefined)?.["lineage"];
+    if (!lineage || typeof lineage.isLineageDocument !== "function" || typeof lineage.openCardPopover !== "function")
+      return false;
+    if (!lineage.isLineageDocument(file.path)) return false;
+
+    const leaf = useLeaf ?? this.attachLeaf();
+    const handled = await lineage.openCardPopover(leaf, file, subpath);
+    if (!handled) {
+      // release the unused popover leaf so the fallback flow starts clean
+      if (!useLeaf) leaf.detach();
+      return false;
+    }
+    this.whenShown(() => {
+      const titleEl = this.hoverEl.querySelector(".popover-title");
+      if (titleEl) {
+        titleEl.textContent = leaf.view?.getDisplayText() ?? file.name;
+        titleEl.setAttribute("data-path", file.path);
+      }
+      this.fitToCard(leaf);
     });
+    return true;
+  }
+
+  /**
+   * Size the popover to the single card (bounded by the window height) since
+   * the default popover dimensions are meant for full documents. The card
+   * renders asynchronously (document store + Svelte mount), so retry over a
+   * few frames until it is in the DOM.
+   */
+  private fitToCard(leaf: WorkspaceLeaf, maxTries = 40) {
+    const win = this.document.defaultView!;
+    let tries = 0;
+    const fit = () => {
+      if (this.detaching) return;
+      const contentEl = leaf.view?.contentEl;
+      const card = contentEl?.querySelector(".lineage-card") as HTMLElement | null;
+      if (!card) {
+        if (++tries < maxTries) win.requestAnimationFrame(fit);
+        return;
+      }
+      const chrome = Math.max(this.hoverEl.offsetHeight - (contentEl?.offsetHeight ?? 0), 0);
+      const maxHeight = Math.round(win.innerHeight * 0.7);
+      const height = Math.min(Math.round(card.getBoundingClientRect().height + chrome + 24), maxHeight);
+      if (height > 0) {
+        this.hoverEl.style.height = height + "px";
+        // the card title (incl. its section suffix) is only known once the
+        // card has rendered - refresh it here
+        const titleEl = this.hoverEl.querySelector(".popover-title");
+        if (titleEl && leaf.view) titleEl.textContent = leaf.view.getDisplayText();
+        this.requestLeafMeasure();
+      }
+    };
+    win.requestAnimationFrame(fit);
   }
 
   displayOpenFileAction(file: TFile) {
@@ -1139,7 +1224,7 @@ export class HoverEditor extends nosuper(HoverPopover) {
           // Don't set focus so as not to activate the Obsidian window during unfocused mouseover
           app.workspace.setActiveLeaf(leaf, false, false);
           // Set only the leaf focus, rather than global focus
-          if (app.workspace.activeLeaf === leaf) leaf.setEphemeralState({focus: true});
+          if (app.workspace.activeLeaf === leaf) leaf.setEphemeralState({ focus: true });
           // Prevent this leaf's file from registering as a recent file
           // (for the quick switcher or Recent Files plugin) for the next
           // 1ms.  (They're both triggered by a file-open event that happens
@@ -1160,7 +1245,7 @@ export class HoverEditor extends nosuper(HoverPopover) {
           );
           const recentFiles = this.plugin.app.plugins.plugins["recent-files-obsidian"];
           if (recentFiles) {
-            const view = this.plugin.app.workspace.getLeavesOfType("recent-files").first()?.view as any
+            const view = this.plugin.app.workspace.getLeavesOfType("recent-files").first()?.view as any;
             setTimeout(
               around(recentFiles, {
                 shouldAddFile(old) {
@@ -1176,13 +1261,17 @@ export class HoverEditor extends nosuper(HoverPopover) {
                       // Recent Files 1.7.4+ tries to redraw on file-open event,
                       // which will lose the original hovered element on
                       // autofocus (see #326, tgrosinger/recent-files-obsidian#132)
-                      defer(around(view, {redraw(old) {
-                        // no-op: block refresh from happening in this microtick
-                      }}))
+                      defer(
+                        around(view, {
+                          redraw(old) {
+                            // no-op: block refresh from happening in this microtick
+                          },
+                        }),
+                      );
                     }
                     return old.call(this, _file === file ? null : _file);
-                  }
-                }
+                  };
+                },
               }),
               1,
             );
@@ -1366,9 +1455,9 @@ export function setMouseCoords(event: MouseEvent) {
     y: event.clientY,
   };
   if (event.win.frameElement) {
-    const {x, y, scale} = unframed(event.win)
-    mouseCoords.x = x + mouseCoords.x * scale
-    mouseCoords.y = y + mouseCoords.y * scale
+    const { x, y, scale } = unframed(event.win);
+    mouseCoords.x = x + mouseCoords.x * scale;
+    mouseCoords.y = y + mouseCoords.y * scale;
   }
 }
 
@@ -1388,24 +1477,24 @@ function overlaps(rect1?: Bounds, rect2?: Bounds) {
   );
 }
 
-type Bounds = { top: number; left: number; bottom: number; right: number }
+type Bounds = { top: number; left: number; bottom: number; right: number };
 
 function unframedBounds(el: HTMLElement): Bounds {
-  const r = el?.getBoundingClientRect()
+  const r = el?.getBoundingClientRect();
   if (el?.win.frameElement) {
-    const {x, y, scale} = unframed(el.win)
+    const { x, y, scale } = unframed(el.win);
     return {
-      left:   x + r.left   * scale,
-      right:  x + r.right  * scale,
-      top:    y + r.top    * scale,
+      left: x + r.left * scale,
+      right: x + r.right * scale,
+      top: y + r.top * scale,
       bottom: y + r.bottom * scale,
-    }
+    };
   }
-  return r
+  return r;
 }
 
 function unframedWindow(win: Window) {
-  return win.frameElement ? unframed(win).win : win
+  return win.frameElement ? unframed(win).win : win;
 }
 
 /**
@@ -1414,13 +1503,15 @@ function unframedWindow(win: Window) {
  * Returns `{x: 0, y: 0, scale: 1, win: inputwindow}` if unframed.
  */
 function unframed(win: Window) {
-  let x = 0, y = 0, scale = 1;
-  for(var el: Element; el = win.frameElement!; win = el.win) {
-    const rect = el.getBoundingClientRect()
-    const ratio = rect.width / el.clientWidth
-    scale *= ratio
-    x = rect.x + x*ratio
-    y = rect.y + y*ratio
+  let x = 0,
+    y = 0,
+    scale = 1;
+  for (var el: Element; (el = win.frameElement!); win = el.win) {
+    const rect = el.getBoundingClientRect();
+    const ratio = rect.width / el.clientWidth;
+    scale *= ratio;
+    x = rect.x + x * ratio;
+    y = rect.y + y * ratio;
   }
-  return {x, y, scale, win}
+  return { x, y, scale, win };
 }

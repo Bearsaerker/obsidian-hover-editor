@@ -83,7 +83,7 @@ declare module "obsidian" {
   }
 
   interface MarkdownPreviewView {
-    onResize(): void
+    onResize(): void;
   }
 
   interface MarkdownEditView {
@@ -112,7 +112,7 @@ declare module "obsidian" {
     recursiveGetTarget(event: MouseEvent, parent: WorkspaceParent): WorkspaceItem;
     recordMostRecentOpenedFile(file: TFile): void;
     onDragLeaf(event: MouseEvent, leaf: WorkspaceLeaf): void;
-    onLayoutChange(): void  // tell Obsidian leaves have been added/removed/etc.
+    onLayoutChange(): void; // tell Obsidian leaves have been added/removed/etc.
     activeEditor: MarkdownFileInfo | null;
   }
   interface Editor {
